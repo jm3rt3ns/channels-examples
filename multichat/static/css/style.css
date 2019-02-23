@@ -69,9 +69,15 @@ header {
     }
 
 /* Body */
-section {
-    width: 800px;
+.container {
+    width: 1000px;
     margin: 0 auto;
+    display: flex;
+}
+
+.container > div {
+    flex: 1;
+    margin: 10px;
 }
 
 p {

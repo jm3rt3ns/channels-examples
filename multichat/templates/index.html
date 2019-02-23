@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-
-{% block title %}MultiChat Example{% endblock %}
-{% block header_text %}MultiChat Example{% endblock %}
+{% load staticfiles %}
+{% block title %}Identi-Draw{% endblock %}
+{% block header_text %}<img src="{% static 'css/logo.png' %}">{% endblock %}
 
 {% block content %}
 
@@ -13,7 +13,15 @@
         {% endfor %}
     </ul>
 
-    <div id="chats">
+    <div class="row container">
+        <div>
+                <div id="canvasArea"></div>
+                <div id="chats"></div>
+        </div>
+        <div>
+            <h1>Mugshots</h1>
+            <div id="mugshots"></div>
+        </div>
     </div>
 
 {% endblock %}
@@ -22,17 +30,36 @@
 {% block extra_body %}
     <script>
         $(function () {
+
             // Correctly decide between ws:// and wss://
             var ws_scheme = window.location.protocol == "https:" ? "wss" : "ws";
             var ws_path = ws_scheme + '://' + window.location.host + "/chat/stream/";
             console.log("Connecting to " + ws_path);
             var socket = new ReconnectingWebSocket(ws_path);
 
+            console.log('appending another kiddo');
+            var canvas = $(
+                        "<div id=\"canvasDiv\"></div>"
+                    )
+            $("#canvasArea").append(canvas);
+            var canvasDiv = document.getElementById('canvasDiv');
+            canvas = document.createElement('canvas');
+            canvas.setAttribute('width', 500);
+            canvas.setAttribute('height', 500);
+            canvas.setAttribute('id', 'canvas');
+            canvas.setAttribute('style', 'border:1px solid black')
+            canvasDiv.appendChild(canvas);
+            if(typeof G_vmlCanvasManager != 'undefined') {
+                canvas = G_vmlCanvasManager.initElement(canvas);
+            }
+            context = canvas.getContext("2d");
+
             // Handle incoming messages
             socket.onmessage = function (message) {
                 // Decode the JSON
-                console.log("Got websocket message " + message.data);
+                // console.log("Got websocket message " + message.data);
                 var data = JSON.parse(message.data);
+                console.log('data: ', data);
                 // Handle errors
                 if (data.error) {
                     alert(data.error);
@@ -41,6 +68,7 @@
                 // Handle joining
                 if (data.join) {
                     console.log("Joining room " + data.join);
+
                     var roomdiv = $(
                             "<div class='room' id='room-" + data.join + "'>" +
                             "<h2>" + data.title + "</h2>" +
@@ -58,12 +86,51 @@
                         roomdiv.find("input").val("");
                         return false;
                     });
+
+                    roomdiv.find("#ready-button").on("click", function () {
+                        socket.send(JSON.stringify({
+                            "command": "ready",
+                            "room": data.join,
+                        }));
+                        return false;
+                    });
+                    
+                    //
+                    $('#canvas').mouseup(function(e){
+                        paint = false;
+                        console.log('sending update ', data.join);
+
+                        //on mouseup, update the other players with a new image
+                        // console.log("the room: ", data);
+                        socket.send(JSON.stringify({
+                            "command": "draw",
+                            "room": data.join,
+                            "image": document.getElementById("canvas").toDataURL("image/png"),
+                            "target_player": data.target_player
+                        }));
+                    });
+                    
                     $("#chats").append(roomdiv);
                     // Handle leaving
                 } else if (data.leave) {
                     console.log("Leaving room " + data.leave);
                     $("#room-" + data.leave).remove();
                     // Handle getting a message
+                } else if (data.image) {
+                    var msgdiv = $("#room-" + data.room + " .messages");
+                    var ok_msg = "";
+                    console.log('received an image');
+                    // Image - figure out where to append this new image
+                    // console.log('HERE')
+                    // console.log('data: ', data.image)
+                    image = "<div class='contextual-message text-muted'>" + data.username +
+                            " drew a picture!" +
+                            "</div>" +
+                            "<img src=\"" + data.image + "\" height=\"100px\" width=\"100px\"/>";
+
+                    msgdiv.append(image);
+
+                    msgdiv.scrollTop(msgdiv.prop("scrollHeight"));
                 } else if (data.message || data.msg_type != 0) {
                     var msgdiv = $("#room-" + data.room + " .messages");
                     var ok_msg = "";
@@ -97,6 +164,15 @@
                             ok_msg = "<div class='contextual-message text-muted'>" + data.username +
                                     " joined the room!" +
                                     "</div>";
+
+                            // Add user name and placeholder image area to the right side of the screen
+                            var new_mugshot = $(
+                                "<div style=\"border:1px solid black;\">" +
+                                "<p>" + data.username + "</p>" +
+                                "<img src=\"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=\" width=\"100\" height=\"100\" alt=\"\" />" +
+                                "</div>"
+                            )
+                            $("#mugshots").append(new_mugshot);
                             break;
                         case 5:
                             // User left room
@@ -114,6 +190,61 @@
                 } else {
                     console.log("Cannot handle message!");
                 }
+
+                // set up the canvas for drawing
+                
+
+          $('#canvas').mousedown(function(e){
+            var mouseX = e.pageX - this.offsetLeft;
+            var mouseY = e.pageY - this.offsetTop;
+                    
+            paint = true;
+            addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop);
+            redraw();
+        });
+
+            $('#canvas').mousemove(function(e){
+                if(paint){
+                    addClick(e.pageX - this.offsetLeft, e.pageY - this.offsetTop, true);
+                    redraw();
+                }
+            });
+
+            $('#canvas').mouseleave(function(e){
+                paint = false;
+            });
+
+            var clickX = new Array();
+            var clickY = new Array();
+            var clickDrag = new Array();
+            var paint;
+
+            function addClick(x, y, dragging)
+            {
+                clickX.push(x);
+                clickY.push(y);
+                clickDrag.push(dragging);
+            }
+
+            function redraw(){
+                context.clearRect(0, 0, context.canvas.width, context.canvas.height); // Clears the canvas
+                
+                context.strokeStyle = "#df4b26";
+                context.lineJoin = "round";
+                context.lineWidth = 5;
+                            
+                for(var i=0; i < clickX.length; i++) {		
+                    context.beginPath();
+                    if(clickDrag[i] && i){
+                    context.moveTo(clickX[i-1], clickY[i-1]);
+                    }else{
+                    context.moveTo(clickX[i]-1, clickY[i]);
+                    }
+                    context.lineTo(clickX[i], clickY[i]);
+                    context.closePath();
+                    context.stroke();
+                }
+            }
             };
 
             // Says if we joined a room or not by if there's a div for it

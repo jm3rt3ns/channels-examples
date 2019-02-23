@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-
+{% load staticfiles %}
 {% block title %}Login{% endblock %}
-{% block header_text %}Login{% endblock %}
+{% block header_text %}<img class="col-md-12" src="{% static 'css/logo.png' %}">{% endblock %}
 
 {% block content %}
 
     <form action="." method="POST">
         {{ form }}
         {% csrf_token %}
-        <button>Login</button>
+        <button class="btn btn-default">Login</button>
     </form>
 
 {% endblock %}

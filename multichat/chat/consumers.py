@@ -43,11 +43,19 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             if command == "join":
                 # Make them join the room
                 await self.join_room(content["room"])
+            elif command == "ready":
+                await self.ready_up(content["room"])
             elif command == "leave":
                 # Leave the room
                 await self.leave_room(content["room"])
             elif command == "send":
+                print(content)
                 await self.send_room(content["room"], content["message"])
+            elif command == "draw":
+                print("drawing")
+                print(content["image"])
+                print(content["room"])
+                await self.send_room_draw(content["room"], content["image"], content["target_player"])
         except ClientError as e:
             # Catch any errors and send it back
             await self.send_json({"error": e.code})
@@ -56,6 +64,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         Called when the WebSocket closes for any reason.
         """
+        print('disconnecting')
         # Leave all the rooms we are still in
         for room_id in list(self.rooms):
             try:
@@ -141,6 +150,47 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             }
         )
 
+    async def send_room_draw(self, room_id, image, target_player):
+        """
+        Called by receive_json when someone sends a message to a room.
+        """
+        print("HERE")
+        print(self.rooms)
+        print(room_id)
+        # Check they are in this room
+        if room_id not in self.rooms:
+            raise ClientError("ROOM_ACCESS_DENIED")
+        # Get the room and send to the group about it
+        room = await get_room_or_error(room_id, self.scope["user"])
+        await self.channel_layer.group_send(
+            room.group_name,
+            {
+                "type": "chat.image",
+                "room_id": room_id,
+                "username": self.scope["user"].username,
+                "image": image,
+            }
+        )
+
+    async def ready_up(self, room_id):
+        """
+        Called by receive_json when someone readys up
+        """
+        # Check they are in this room
+        if room_id not in self.rooms:
+            raise ClientError("ROOM_ACCESS_DENIED")
+        # Get the room and send to the group about it
+        room = await get_room_or_error(room_id, self.scope["user"])
+        await self.channel_layer.group_send(
+            room.group_name,
+            {
+                "type": "chat.start",
+                "room_id": room_id,
+                "username": self.scope["user"].username,
+                "message": message,
+            }
+        )
+
     ##### Handlers for messages sent over the channel layer
 
     # These helper methods are named by the types we send - so chat.join becomes chat_join
@@ -181,5 +231,19 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                 "room": event["room_id"],
                 "username": event["username"],
                 "message": event["message"],
+            },
+        )
+
+    async def chat_image(self, event):
+        """
+        Called when someone updates an image in the chat.
+        """
+        # Send a message down to the client
+        await self.send_json(
+            {
+                "msg_type": settings.MSG_TYPE_IMAGE,
+                "room": event["room_id"],
+                "username": event["username"],
+                "image": event["image"],
             },
         )
