@@ -1,28 +1,39 @@
 {% extends "base.html" %}
 {% load staticfiles %}
 {% block title %}Identi-Draw{% endblock %}
-{% block header_text %}<img src="{% static 'css/logo.png' %}">{% endblock %}
 
 {% block content %}
+<div class="jumbotron">
+        <div class="container">
 
-    <ul class="rooms">
-        {% for room in rooms %}
-            <li class="room-link" data-room-id="{{ room.id }}">{{ room }}</li>
-        {% empty %}
-            <p class="empty">No chat rooms defined. Maybe make some in the <a href="{% url 'admin:index' %}">admin</a>?</p>
-        {% endfor %}
-    </ul>
+        <div id="setupArea">
+            <ul class="rooms">
+                {% for room in rooms %}
+                    <li class="room-link" data-room-id="{{ room.id }}">{{ room }}</li>
+                {% empty %}
+                    <p class="empty">No games created. Maybe make some in the <a href="{% url 'admin:index' %}">admin</a>?</p>
+                {% endfor %}
+            </ul>
+            <div class="col-md-12">
+                <form action="." method="POST" style="list-style-type:none;" class="text-center">
+                    {{ createRoomForm }}
+                    {% csrf_token %}
+                    <div class="form-group">
+                        <input type="submit" value="Create New Room" class="btn btn-primary">
+                    </div>
+                </form>
+            </div>
+        </div>
 
-    <div class="row container">
-        <div>
-                <div id="canvasArea"></div>
-                <div id="chats"></div>
+        <div id="chatArea" class="row container">
+            <div>
+                    <div id="canvasArea"></div>
+                    <div id="chats"></div>
+            </div>
         </div>
-        <div>
-            <h1>Mugshots</h1>
-            <div id="mugshots"></div>
-        </div>
+
     </div>
+</div>
 
 {% endblock %}
 
@@ -37,29 +48,14 @@
             console.log("Connecting to " + ws_path);
             var socket = new ReconnectingWebSocket(ws_path);
 
-            console.log('appending another kiddo');
-            var canvas = $(
-                        "<div id=\"canvasDiv\"></div>"
-                    )
-            $("#canvasArea").append(canvas);
-            var canvasDiv = document.getElementById('canvasDiv');
-            canvas = document.createElement('canvas');
-            canvas.setAttribute('width', 500);
-            canvas.setAttribute('height', 500);
-            canvas.setAttribute('id', 'canvas');
-            canvas.setAttribute('style', 'border:1px solid black')
-            canvasDiv.appendChild(canvas);
-            if(typeof G_vmlCanvasManager != 'undefined') {
-                canvas = G_vmlCanvasManager.initElement(canvas);
-            }
-            context = canvas.getContext("2d");
+
 
             // Handle incoming messages
             socket.onmessage = function (message) {
                 // Decode the JSON
                 // console.log("Got websocket message " + message.data);
                 var data = JSON.parse(message.data);
-                console.log('data: ', data);
+                console.log(data);
                 // Handle errors
                 if (data.error) {
                     alert(data.error);
@@ -69,9 +65,45 @@
                 if (data.join) {
                     console.log("Joining room " + data.join);
 
+                    $('#setupArea').empty();
+
+                    $('#chatArea').prepend("<div class=\"col-md-12 w-100\"><a href=\"/\">Return to Game Selection</a><h2>" + data.title + "</h2>" +
+                    "<div class=\"form-check\">" +
+                        "<input type=\"checkbox\" class=\"form-check-input\" id=\"readyOrNot\">" +
+                        "<label class=\"form-check-label\" for=\"readyOrNot\">Ready</label>" +
+                    "</div>" +
+                    "</div><br>")
+                    $('#chatArea').append("<div><h2>Mugshots</h2><div id=\"mugshots\"></div></div>")
+
+                    $.each(data.players, function(i, item) {
+                        var new_mugshot = $(
+                                "<div style=\"border:1px solid black;\">" +
+                                "<p>" + item.username + " " + item.ready + "</p>" +
+                                "<img src=\"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=\" width=\"100\" height=\"100\" alt=\"\" />" +
+                                "</div>"
+                            );
+                        $('#mugshots').append(new_mugshot);
+                    });
+                    // init the canvas and other game elements
+                    console.log('appending another kiddo');
+                    var canvas = $(
+                                "<div id=\"canvasDiv\"></div>"
+                            )
+                    $("#canvasArea").append(canvas);
+                    var canvasDiv = document.getElementById('canvasDiv');
+                    canvas = document.createElement('canvas');
+                    canvas.setAttribute('width', 500);
+                    canvas.setAttribute('height', 500);
+                    canvas.setAttribute('id', 'canvas');
+                    canvas.setAttribute('style', 'border:1px solid black')
+                    canvasDiv.appendChild(canvas);
+                    if(typeof G_vmlCanvasManager != 'undefined') {
+                        canvas = G_vmlCanvasManager.initElement(canvas);
+                    }
+                    context = canvas.getContext("2d");
+
                     var roomdiv = $(
                             "<div class='room' id='room-" + data.join + "'>" +
-                            "<h2>" + data.title + "</h2>" +
                             "<div class='messages'></div>" +
                             "<form><input><button>Send</button></form>" +
                             "</div>"
@@ -87,10 +119,15 @@
                         return false;
                     });
 
-                    roomdiv.find("#ready-button").on("click", function () {
+                    $("#readyOrNot").on("click", function () {
+                        console.log('hey there')
+                        var checkboxValue = $(this).val();
+                        $(this).prop("checked", !$(this).prop("checked"));
+                        console.log(checkboxValue)
                         socket.send(JSON.stringify({
                             "command": "ready",
                             "room": data.join,
+                            "checkboxValue": checkboxValue
                         }));
                         return false;
                     });
@@ -116,6 +153,8 @@
                     console.log("Leaving room " + data.leave);
                     $("#room-" + data.leave).remove();
                     // Handle getting a message
+                } else if (data.start) {
+                    //nothing
                 } else if (data.image) {
                     var msgdiv = $("#room-" + data.room + " .messages");
                     var ok_msg = "";
@@ -140,7 +179,7 @@
                         case 0:
                             // Message
                             ok_msg = "<div class='message'>" +
-                                    "<span class='username'>" + data.username + "</span>" +
+                                    "<span class='username'>" + data.username + ": </span>" +
                                     "<span class='body'>" + data.message + "</span>" +
                                     "</div>";
                             break;
@@ -166,19 +205,39 @@
                                     "</div>";
 
                             // Add user name and placeholder image area to the right side of the screen
-                            var new_mugshot = $(
-                                "<div style=\"border:1px solid black;\">" +
-                                "<p>" + data.username + "</p>" +
-                                "<img src=\"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=\" width=\"100\" height=\"100\" alt=\"\" />" +
-                                "</div>"
-                            )
-                            $("#mugshots").append(new_mugshot);
+                            $('#mugshots').empty()
+                            $.each(data.players, function(i, item) {
+                                var new_mugshot = $(
+                                        "<div style=\"border:1px solid black;\">" +
+                                        "<p>" + item.username + " " + item.ready + "</p>" +
+                                        "<img src=\"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=\" width=\"100\" height=\"100\" alt=\"\" />" +
+                                        "</div>"
+                                    );
+                                $('#mugshots').append(new_mugshot);
+                            });
                             break;
                         case 5:
                             // User left room
                             ok_msg = "<div class='contextual-message text-muted'>" + data.username +
                                     " left the room!" +
                                     "</div>";
+                            break;
+                        case 7:
+                            // User readied up
+                            ok_msg = "<div class='contextual-message text-muted'>" + data.username +
+                                    " readied up!" +
+                                    "</div>";
+
+                            $('#mugshots').empty()
+                            $.each(data.players, function(i, item) {
+                                var new_mugshot = $(
+                                        "<div style=\"border:1px solid black;\">" +
+                                        "<p>" + item.username + " " + item.ready + "</p>" +
+                                        "<img src=\"data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=\" width=\"100\" height=\"100\" alt=\"\" />" +
+                                        "</div>"
+                                    );
+                                $('#mugshots').append(new_mugshot);
+                            });
                             break;
                         default:
                             console.log("Unsupported message type!");

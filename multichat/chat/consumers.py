@@ -1,9 +1,9 @@
 from django.conf import settings
 
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-
+from django.core import serializers
 from .exceptions import ClientError
-from .utils import get_room_or_error
+from .utils import get_room_or_error, get_players_or_error, add_player_to_room, ready_player
 
 
 class ChatConsumer(AsyncJsonWebsocketConsumer):
@@ -17,7 +17,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
     """
 
     ##### WebSocket event handlers
-
     async def connect(self):
         """
         Called when the websocket is handshaking as part of initial connection.
@@ -31,6 +30,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.accept()
         # Store which rooms the user has joined on this connection
         self.rooms = set()
+
+        # Store which users are in a current room
 
     async def receive_json(self, content):
         """
@@ -79,7 +80,9 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         Called by receive_json when someone sent a join command.
         """
         # The logged-in user is in our scope thanks to the authentication ASGI middleware
+        added = await add_player_to_room(room_id, self.scope["user"])
         room = await get_room_or_error(room_id, self.scope["user"])
+        players = await get_players_or_error(room_id, self.scope["user"])
         # Send a join message if it's turned on
         if settings.NOTIFY_USERS_ON_ENTER_OR_LEAVE_ROOMS:
             await self.channel_layer.group_send(
@@ -88,6 +91,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
                     "type": "chat.join",
                     "room_id": room_id,
                     "username": self.scope["user"].username,
+                    "players": list(players.values('username', 'id', 'ready'))
                 }
             )
         # Store that we're in the room
@@ -101,6 +105,8 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({
             "join": str(room.id),
             "title": room.title,
+            "username": self.scope["user"].username,
+            "players": list(players.values('username', 'id', 'ready'))
         })
 
     async def leave_room(self, room_id):
@@ -109,6 +115,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         # The logged-in user is in our scope thanks to the authentication ASGI middleware
         room = await get_room_or_error(room_id, self.scope["user"])
+        removed = await remove_player_from_room(room_id, self.scope["user"])
         # Send a leave message if it's turned on
         if settings.NOTIFY_USERS_ON_ENTER_OR_LEAVE_ROOMS:
             await self.channel_layer.group_send(
@@ -121,6 +128,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             )
         # Remove that we're in the room
         self.rooms.discard(room_id)
+        self.users.remove(self.scope["user"].username)
         # Remove them from the group so they no longer get room messages
         await self.channel_layer.group_discard(
             room.group_name,
@@ -180,14 +188,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         if room_id not in self.rooms:
             raise ClientError("ROOM_ACCESS_DENIED")
         # Get the room and send to the group about it
+        readied = await ready_player(self.scope["user"])
         room = await get_room_or_error(room_id, self.scope["user"])
+        players = await get_players_or_error(room_id, self.scope["user"])
         await self.channel_layer.group_send(
             room.group_name,
             {
-                "type": "chat.start",
+                "type": "chat.ready",
                 "room_id": room_id,
                 "username": self.scope["user"].username,
-                "message": message,
+                "players": list(players.values('username', 'id', 'ready'))
             }
         )
 
@@ -198,12 +208,29 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         """
         Called when someone has joined our chat.
         """
+        players = await get_players_or_error(event["room_id"], self.scope["user"])
         # Send a message down to the client
         await self.send_json(
             {
                 "msg_type": settings.MSG_TYPE_ENTER,
                 "room": event["room_id"],
                 "username": event["username"],
+                "players": list(players.values('username', 'id', 'ready'))
+            },
+        )
+
+    async def chat_ready(self, event):
+        """
+        Called when someone has readied up.
+        """
+        players = await get_players_or_error(event["room_id"], self.scope["user"])
+        # Send a message down to the client
+        await self.send_json(
+            {
+                "msg_type": settings.MSG_TYPE_READY,
+                "room": event["room_id"],
+                "username": event["username"],
+                "players": list(players.values('username', 'id', 'ready'))
             },
         )
 

@@ -47,6 +47,7 @@ MSG_TYPE_MUTED = 3  # For just OK information that doesn't bother users
 MSG_TYPE_ENTER = 4  # For just OK information that doesn't bother users
 MSG_TYPE_LEAVE = 5  # For just OK information that doesn't bother users
 MSG_TYPE_IMAGE = 6
+MSG_TYPE_READY = 7
 
 MESSAGE_TYPES_CHOICES = (
     (MSG_TYPE_MESSAGE, 'MESSAGE'),
@@ -56,6 +57,7 @@ MESSAGE_TYPES_CHOICES = (
     (MSG_TYPE_ENTER, 'ENTER'),
     (MSG_TYPE_LEAVE, 'LEAVE'),
     (MSG_TYPE_IMAGE, 'IMAGE'),
+    (MSG_TYPE_READY, 'READY'),
 )
 
 MESSAGE_TYPES_LIST = [
@@ -66,6 +68,7 @@ MESSAGE_TYPES_LIST = [
     MSG_TYPE_ENTER,
     MSG_TYPE_LEAVE,
     MSG_TYPE_IMAGE,
+    MSG_TYPE_READY
 ]
 
 
@@ -138,6 +141,7 @@ DATABASES = {
 # Deliberately turned off for this example.
 AUTH_PASSWORD_VALIDATORS = []
 
+AUTH_USER_MODEL = 'chat.User'
 LOGIN_REDIRECT_URL = "/"
 
 

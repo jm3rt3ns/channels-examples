@@ -1,4 +1,24 @@
 from django.db import models
+from django.contrib.auth.models import AbstractUser
+
+class User(AbstractUser):
+    item = models.CharField(max_length=30, blank=True, null=True)
+    eliminated = models.BooleanField(default=False)
+    game_room = models.ForeignKey(
+        'Room',
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True
+    )
+
+    target_player = models.ForeignKey(
+        'User',
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True
+    )
+
+    ready = models.BooleanField(default=False)
 
 
 class Room(models.Model):
@@ -11,6 +31,8 @@ class Room(models.Model):
 
     # If only "staff" users are allowed (is_staff on django's User)
     staff_only = models.BooleanField(default=False)
+
+    status = models.IntegerField(default=0)
 
     def __str__(self):
         return self.title
